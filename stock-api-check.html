@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>주식/ETF 시세 API 접속 확인</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 860px; margin: 28px auto; padding: 0 16px; line-height: 1.55; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  h2 { font-size: 15px; margin: 28px 0 4px; }
+  .sub { color: #666; font-size: 14px; margin-bottom: 18px; }
+  button { padding: 9px 18px; font-size: 14px; cursor: pointer; border-radius: 6px; border: 1px solid #999; background: #fff; }
+  input[type=text] { padding: 7px 10px; font-size: 13px; border-radius: 6px; border: 1px solid #ccc; width: 220px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 8px; border-bottom: 1px solid #e3e3e3; vertical-align: top; }
+  th { font-weight: 600; color: #555; font-size: 12px; }
+  td.num { font-variant-numeric: tabular-nums; }
+  .tag { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px; white-space: nowrap; display: inline-block; }
+  .pass { background: #d4f4dd; color: #1a7a34; }
+  .fail { background: #fde0de; color: #b3261e; }
+  .info { background: #eee; color: #555; }
+  .keyrow input { margin-right: 6px; }
+  .note { font-size: 12px; color: #777; margin-top: 4px; }
+  code { background: #f2f2f2; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+</style>
+</head>
+<body>
+  <h1>주식/ETF 시세 API 접속 확인</h1>
+  <p class="sub">
+    비트코인처럼 미국 ETF·국내 주식도 브라우저에서 직접(무료·자동) 시세를 받아올 수 있는지 확인합니다.
+    이 개발 환경은 외부망이 막혀 있어서 여기서는 테스트가 불가능합니다 — 이 파일을 <b>본인 브라우저</b>로
+    직접 열고 아래 버튼을 눌러 결과를 알려주세요.
+  </p>
+
+  <div class="keyrow">
+    <label>Finnhub API 키 (선택, <a href="https://finnhub.io/register" target="_blank">무료 발급</a>): <input type="text" id="finnhubKey" placeholder="비워두면 이 항목만 건너뜀" /></label>
+  </div>
+  <div class="keyrow">
+    <label>Twelve Data API 키 (선택, <a href="https://twelvedata.com/pricing" target="_blank">무료 발급</a>): <input type="text" id="twelveKey" placeholder="비워두면 이 항목만 건너뜀" /></label>
+  </div>
+  <div class="keyrow">
+    <label>Alpha Vantage API 키 (선택, <a href="https://www.alphavantage.co/support/#api-key" target="_blank">무료 발급</a>): <input type="text" id="alphaKey" placeholder="비워두면 이 항목만 건너뜀" /></label>
+  </div>
+
+  <p><button id="runBtn" onclick="run()">전체 테스트 실행</button></p>
+
+  <h2>미국 ETF/주식 (AAPL, SPY 예시)</h2>
+  <table id="usTable"><thead><tr><th>제공처</th><th>키 필요</th><th>결과</th><th>비고</th></tr></thead><tbody></tbody></table>
+
+  <h2>국내 주식 현재가 (SK하이닉스, 000660)</h2>
+  <table id="krTable"><thead><tr><th>제공처</th><th>키 필요</th><th>결과</th><th>비고</th></tr></thead><tbody></tbody></table>
+
+  <h2>국내 주식 캔들(과거 시세) 데이터</h2>
+  <p class="sub" style="margin-bottom:6px;">
+    현재가 하나가 아니라 <b>일자별 시가·고가·저가·종가</b>를 주는지 확인합니다 — 이게 있어야 캔들차트를 그릴 수 있습니다.
+  </p>
+  <table id="krCandleTable"><thead><tr><th>제공처</th><th>키 필요</th><th>결과</th><th>비고</th></tr></thead><tbody></tbody></table>
+
+  <p class="note">
+    "실패"는 대부분 CORS(브라우저 보안 정책)로 막혔거나, 그 API가 애초에 이 종목/시장을 지원하지 않는 경우입니다.
+    "성공"이 뜨는 항목이 있으면 그걸로 이 앱에 자동 시세 연동을 추가할 수 있습니다.
+  </p>
+  <p class="note">
+    참고: Marketstack 무료 티어는 HTTPS를 지원하지 않아(HTTP만) 이 페이지(HTTPS)에서 직접 호출이 브라우저에
+    의해 차단됩니다 — 그래서 아예 테스트 목록에서 뺐습니다. 지원 여부와 무관하게 항상 "실패"로만 나와서
+    오해를 줄 수 있어서입니다.
+  </p>
+
+<script>
+async function tryFetch(url, opts) {
+  try {
+    const res = await fetch(url, opts);
+    if (!res.ok) return { ok: false, note: `HTTP ${res.status}` };
+    const data = await res.json();
+    return { ok: true, data };
+  } catch (e) {
+    // CORS 차단이면 대부분 TypeError: Failed to fetch 로 잡힘 (상태 코드조차 못 봄)
+    return { ok: false, note: 'CORS 차단 또는 네트워크 오류: ' + e.message };
+  }
+}
+
+function row(name, needsKey, result, extraNote) {
+  const tag = result.ok
+    ? `<span class="tag pass">성공</span>`
+    : `<span class="tag fail">실패</span>`;
+  const note = result.ok ? (extraNote || '') : (result.note || '');
+  return `<tr><td>${name}</td><td>${needsKey ? '필요' : '불필요'}</td><td>${tag}</td><td>${note}</td></tr>`;
+}
+
+async function run() {
+  document.getElementById('runBtn').disabled = true;
+  const usBody = document.querySelector('#usTable tbody');
+  const krBody = document.querySelector('#krTable tbody');
+  const krCandleBody = document.querySelector('#krCandleTable tbody');
+  usBody.innerHTML = '<tr><td colspan="4">테스트 중…</td></tr>';
+  krBody.innerHTML = '<tr><td colspan="4">테스트 중…</td></tr>';
+  krCandleBody.innerHTML = '<tr><td colspan="4">테스트 중…</td></tr>';
+
+  const finnhubKey = document.getElementById('finnhubKey').value.trim();
+  const twelveKey = document.getElementById('twelveKey').value.trim();
+  const alphaKey = document.getElementById('alphaKey').value.trim();
+  const usRows = [];
+  const krRows = [];
+  const krCandleRows = [];
+
+  // ── Yahoo Finance (비공식, 키 불필요) ──────────────────────────────
+  {
+    const r = await tryFetch('https://query1.finance.yahoo.com/v8/finance/chart/AAPL');
+    let note = '';
+    if (r.ok) {
+      const price = r.data?.chart?.result?.[0]?.meta?.regularMarketPrice;
+      note = `AAPL 현재가: $${price}`;
+    }
+    usRows.push(row('Yahoo Finance (query1)', false, r, note));
+  }
+  {
+    const r = await tryFetch('https://query1.finance.yahoo.com/v8/finance/chart/000660.KS');
+    let note = '';
+    if (r.ok) {
+      const price = r.data?.chart?.result?.[0]?.meta?.regularMarketPrice;
+      note = `SK하이닉스 현재가: ₩${price}`;
+    }
+    krRows.push(row('Yahoo Finance (000660.KS)', false, r, note));
+  }
+
+  // ── Stooq CSV (비공식, 키 불필요) ──────────────────────────────────
+  {
+    try {
+      const res = await fetch('https://stooq.com/q/l/?s=aapl.us&f=sd2t2ohlcv&h&e=csv');
+      const text = await res.text();
+      const ok = res.ok && text.includes(',') && !text.startsWith('<');
+      usRows.push(row('Stooq (CSV)', false, { ok }, ok ? text.split('\n')[1] : ''));
+    } catch (e) {
+      usRows.push(row('Stooq (CSV)', false, { ok: false, note: 'CORS 차단 또는 네트워크 오류: ' + e.message }));
+    }
+  }
+  {
+    try {
+      const res = await fetch('https://stooq.com/q/l/?s=000660.kr&f=sd2t2ohlcv&h&e=csv');
+      const text = await res.text();
+      const ok = res.ok && text.includes(',') && !text.startsWith('<');
+      krRows.push(row('Stooq (000660.kr)', false, { ok }, ok ? text.split('\n')[1] : ''));
+    } catch (e) {
+      krRows.push(row('Stooq (000660.kr)', false, { ok: false, note: 'CORS 차단 또는 네트워크 오류: ' + e.message }));
+    }
+  }
+
+  // ── Finnhub (키 필요, 무료 티어 있음) ──────────────────────────────
+  if (finnhubKey) {
+    const r = await tryFetch(`https://finnhub.io/api/v1/quote?symbol=AAPL&token=${encodeURIComponent(finnhubKey)}`);
+    usRows.push(row('Finnhub', true, r, r.ok ? `AAPL 현재가: $${r.data.c}` : ''));
+    const rKr = await tryFetch(`https://finnhub.io/api/v1/quote?symbol=000660.KS&token=${encodeURIComponent(finnhubKey)}`);
+    krRows.push(row('Finnhub (000660.KS)', true, rKr, rKr.ok ? `현재가: ${rKr.data.c}` : '무료 티어는 한국 거래소 미지원일 수 있음'));
+  } else {
+    usRows.push(row('Finnhub', true, { ok: false, note: '키를 입력하면 테스트합니다' }));
+    krRows.push(row('Finnhub', true, { ok: false, note: '키를 입력하면 테스트합니다' }));
+  }
+
+  // ── Twelve Data (키 필요, 무료 티어 있음) ──────────────────────────
+  if (twelveKey) {
+    const r = await tryFetch(`https://api.twelvedata.com/price?symbol=AAPL&apikey=${encodeURIComponent(twelveKey)}`);
+    usRows.push(row('Twelve Data', true, r, r.ok ? `AAPL 현재가: $${r.data.price}` : ''));
+  } else {
+    usRows.push(row('Twelve Data', true, { ok: false, note: '키를 입력하면 테스트합니다' }));
+  }
+
+  // ── Naver 금융 (비공식, 국내 전용) ─────────────────────────────────
+  {
+    const r = await tryFetch('https://polling.finance.naver.com/api/realtime/domestic/stock/000660');
+    krRows.push(row('네이버 금융 (비공식)', false, r, r.ok ? JSON.stringify(r.data).slice(0, 80) : ''));
+  }
+
+  // ── 국내 주식 "캔들" 데이터 후보 ────────────────────────────────────
+  // 네이버가 자기 차트 위젯에 실제로 쓰는 비공식 일봉 데이터 — 순수 JSON이 아니라(작은따옴표 배열)
+  // res.json()으로 강제 파싱하면 CORS 때문인지 형식 때문인지 구분이 안 돼서 텍스트로 직접 받는다.
+  {
+    try {
+      const res = await fetch('https://api.finance.naver.com/siseJson.naver?symbol=000660&requestType=1&startTime=20260101&endTime=20260823&timeframe=day');
+      const text = await res.text();
+      const ok = res.ok && text.trim().startsWith('[');
+      krCandleRows.push(row('네이버 금융 일봉 (비공식)', false, { ok }, ok ? text.slice(0, 120) : `HTTP ${res.status} / ${text.slice(0, 60)}`));
+    } catch (e) {
+      krCandleRows.push(row('네이버 금융 일봉 (비공식)', false, { ok: false, note: 'CORS 차단 또는 네트워크 오류: ' + e.message }));
+    }
+  }
+
+  if (twelveKey) {
+    const r = await tryFetch(`https://api.twelvedata.com/time_series?symbol=000660&exchange=KRX&interval=1day&outputsize=5&apikey=${encodeURIComponent(twelveKey)}`);
+    let note = '';
+    if (r.ok) {
+      if (r.data.status === 'error') { note = r.data.message; r.ok = false; }
+      else note = JSON.stringify(r.data.values?.[0] ?? r.data).slice(0, 100);
+    }
+    krCandleRows.push(row('Twelve Data (000660, KRX)', true, r, note));
+  } else {
+    krCandleRows.push(row('Twelve Data (일봉)', true, { ok: false, note: '키를 입력하면 테스트합니다' }));
+  }
+
+  if (alphaKey) {
+    const r = await tryFetch(`https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=000660.KS&apikey=${encodeURIComponent(alphaKey)}`);
+    let note = '';
+    if (r.ok) {
+      const series = r.data['Time Series (Daily)'];
+      if (!series) { note = r.data['Error Message'] || r.data['Information'] || JSON.stringify(r.data).slice(0, 100); r.ok = false; }
+      else note = '최근 일봉: ' + JSON.stringify(Object.values(series)[0]).slice(0, 80);
+    }
+    krCandleRows.push(row('Alpha Vantage (000660.KS)', true, r, note));
+  } else {
+    krCandleRows.push(row('Alpha Vantage (일봉)', true, { ok: false, note: '키를 입력하면 테스트합니다' }));
+  }
+
+  usBody.innerHTML = usRows.join('');
+  krBody.innerHTML = krRows.join('');
+  krCandleBody.innerHTML = krCandleRows.join('');
+  document.getElementById('runBtn').disabled = false;
+}
+</script>
+</body>
+</html>

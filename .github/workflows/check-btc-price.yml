@@ -1,0 +1,35 @@
+name: Check BTC price
+
+on:
+  workflow_dispatch: {}
+  # Best-effort only: GitHub throttles/delays frequent cron schedules on
+  # low-traffic repos, so this does NOT reliably fire every 15 minutes —
+  # see the commit message for detail. It's a bonus record when it does
+  # fire, not something to depend on; use workflow_dispatch for a
+  # guaranteed-fresh read.
+  schedule:
+    - cron: '*/15 * * * *'
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: data
+
+      - name: Fetch current BTC price from CoinGecko
+        run: |
+          curl -s "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true&include_last_updated_at=true" -o data.json
+          cat data.json
+
+      - name: Commit result to data branch
+        run: |
+          git config user.name "btc-price-bot"
+          git config user.email "actions@github.com"
+          git add data.json
+          git commit -m "Update BTC price $(date -u +%FT%TZ)" || echo "No changes to commit"
+          git push origin data

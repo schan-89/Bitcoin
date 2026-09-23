@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>지표 계산 검증 (실제 데이터)</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 800px; margin: 28px auto; padding: 0 16px; line-height: 1.55; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .sub { color: #666; font-size: 14px; margin-bottom: 18px; }
+  button { padding: 9px 18px; font-size: 14px; cursor: pointer; border-radius: 6px; border: 1px solid #999; background: #fff; }
+  table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid #e3e3e3; }
+  th { font-weight: 600; color: #555; font-size: 12px; }
+  td.num { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .tag { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px; white-space: nowrap; }
+  .pass { background: #d4f4dd; color: #1a7a34; }
+  .fail { background: #fde0de; color: #b3261e; }
+  .info { background: #eee; color: #555; }
+  #meta { margin-top: 14px; font-size: 13px; color: #666; background: #f6f6f6; padding: 10px 12px; border-radius: 6px; white-space: pre-wrap; }
+  #verdict { margin-top: 18px; padding: 14px 16px; border-radius: 8px; font-size: 14px; display: none; }
+  #verdict.good { background: #d4f4dd; }
+  #verdict.bad { background: #fde0de; }
+  .note { font-size: 12px; color: #777; margin-top: 14px; }
+</style>
+</head>
+<body>
+  <h1>지표 계산 검증 — 실제 Binance 데이터</h1>
+  <p class="sub">
+    앱이 쓰는 것과 <b>동일한 계산식</b>을 실제 BTC 일봉 1000일치에 돌려서, 라방 2026-08-22 시황에 적힌
+    실제 수치와 맞는지 확인합니다. 파일을 브라우저로 열고 버튼만 누르면 됩니다.
+  </p>
+
+  <button id="runBtn" onclick="run()">실제 데이터로 검증</button>
+  <div id="meta"></div>
+  <div id="out"></div>
+  <div id="verdict"></div>
+  <p class="note">
+    ※ 라방은 TradingView 기준이고 이 페이지는 Binance 현물 기준이라, 거래소·집계 차이로 수치가 정확히 일치하진 않습니다.
+    그래서 "근접 범위"로 판정합니다. 크게 어긋나면 계산식이 잘못된 것입니다.
+  </p>
+
+<script>
+// ── src/lib/indicators.ts 와 동일한 구현 (타입만 제거) ──────────────────────
+const MA_50W_PERIOD = 350, BMSB_SMA_PERIOD = 140, BMSB_EMA_PERIOD = 147, RSI_PERIOD = 14;
+
+function sma(values, period) {
+  const out = new Array(values.length).fill(null);
+  let sum = 0;
+  for (let i = 0; i < values.length; i++) {
+    sum += values[i];
+    if (i >= period) sum -= values[i - period];
+    if (i >= period - 1) out[i] = sum / period;
+  }
+  return out;
+}
+
+function ema(values, period) {
+  const out = new Array(values.length).fill(null);
+  if (values.length < period) return out;
+  const k = 2 / (period + 1);
+  let prev = values.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  out[period - 1] = prev;
+  for (let i = period; i < values.length; i++) {
+    prev = values[i] * k + prev * (1 - k);
+    out[i] = prev;
+  }
+  return out;
+}
+
+function rsi(values, period = RSI_PERIOD) {
+  const out = new Array(values.length).fill(null);
+  if (values.length <= period) return out;
+  let gainSum = 0, lossSum = 0;
+  for (let i = 1; i <= period; i++) {
+    const diff = values[i] - values[i - 1];
+    if (diff >= 0) gainSum += diff; else lossSum -= diff;
+  }
+  let avgGain = gainSum / period, avgLoss = lossSum / period;
+  out[period] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+  for (let i = period + 1; i < values.length; i++) {
+    const diff = values[i] - values[i - 1];
+    const gain = diff > 0 ? diff : 0;
+    const loss = diff < 0 ? -diff : 0;
+    avgGain = (avgGain * (period - 1) + gain) / period;
+    avgLoss = (avgLoss * (period - 1) + loss) / period;
+    out[i] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+  }
+  return out;
+}
+// ────────────────────────────────────────────────────────────────────────────
+
+const HOSTS = ["https://api.binance.com", "https://data-api.binance.vision"];
+const usd = (n) => n == null ? "—" : "$" + Math.round(n).toLocaleString("en-US");
+
+// 라방 2026-08-22 시황에 적힌 실제 수치 (검증 기준)
+const REFERENCE = [
+  { key: "ma200", label: "200일 이평선", ref: "6.9만 ~ 7만", lo: 66000, hi: 73000,
+    src: '시황: "200일 이평선(6.9~7만 달러)"' },
+  { key: "ma50w", label: "50주 이평선", ref: "약 8.2만", lo: 78000, hi: 86000,
+    src: '시황: "8.2만 달러 부근 ... 50주 이평선"' },
+];
+
+async function fetchJson(path) {
+  let lastErr = null;
+  for (const host of HOSTS) {
+    try {
+      const res = await fetch(host + path);
+      if (!res.ok) { lastErr = new Error("HTTP " + res.status); continue; }
+      return await res.json();
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr || new Error("연결 실패");
+}
+
+async function run() {
+  const meta = document.getElementById("meta");
+  const out = document.getElementById("out");
+  const verdict = document.getElementById("verdict");
+  verdict.style.display = "none";
+  out.innerHTML = "";
+  meta.textContent = "실제 데이터 받는 중…";
+
+  let rows;
+  try {
+    rows = await fetchJson("/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=1000");
+  } catch (e) {
+    meta.textContent = "데이터를 받지 못했습니다: " + e;
+    return;
+  }
+
+  const close = rows.map((r) => Number(r[4]));
+  const dates = rows.map((r) => new Date(r[0]).toISOString().slice(0, 10));
+  const last = (arr) => arr[arr.length - 1];
+
+  const price = last(close);
+  const v = {
+    ma50: last(sma(close, 50)),
+    ma200: last(sma(close, 200)),
+    ma50w: last(sma(close, MA_50W_PERIOD)),
+    bmsbSma: last(sma(close, BMSB_SMA_PERIOD)),
+    bmsbEma: last(ema(close, BMSB_EMA_PERIOD)),
+    rsi14: last(rsi(close)),
+  };
+
+  meta.textContent =
+    `수신: ${close.length}일치 (${dates[0]} ~ ${last(dates)})\n` +
+    `최종 종가: ${usd(price)}\n` +
+    `참고 — 라방 2026-08-22 시황 당시 BTC $78,058`;
+
+  const bandLo = Math.min(v.bmsbSma, v.bmsbEma), bandHi = Math.max(v.bmsbSma, v.bmsbEma);
+  let allPass = true;
+
+  const lines = [];
+  for (const r of REFERENCE) {
+    const val = v[r.key];
+    const pass = val != null && val >= r.lo && val <= r.hi;
+    if (!pass) allPass = false;
+    lines.push(`<tr>
+      <td>${r.label}<div style="font-size:11px;color:#888">${r.src}</div></td>
+      <td class="num">${usd(val)}</td>
+      <td>${r.ref}</td>
+      <td><span class="tag ${pass ? "pass" : "fail"}">${pass ? "일치" : "불일치"}</span></td>
+    </tr>`);
+  }
+
+  // 기준값이 시황에 없는 항목은 참고 표시만
+  const extras = [
+    ["50일 이평선", usd(v.ma50)],
+    ["불마켓밴드 (20주SMA / 21주EMA)", `${usd(bandLo)} ~ ${usd(bandHi)}`],
+    ["RSI(14)", v.rsi14 == null ? "—" : v.rsi14.toFixed(1)],
+    ["현재가 vs 50주선", v.ma50w ? ((price - v.ma50w) / v.ma50w * 100).toFixed(1) + "%" : "—"],
+    ["현재가 vs 200일선", v.ma200 ? ((price - v.ma200) / v.ma200 * 100).toFixed(1) + "%" : "—"],
+  ];
+  for (const [label, val] of extras) {
+    lines.push(`<tr>
+      <td>${label}</td><td class="num">${val}</td>
+      <td colspan="2"><span class="tag info">시황에 기준값 없음 · 참고</span></td>
+    </tr>`);
+  }
+
+  out.innerHTML = `<table>
+    <thead><tr><th>지표</th><th>앱 계산값</th><th>라방 시황 수치</th><th>판정</th></tr></thead>
+    <tbody>${lines.join("")}</tbody></table>`;
+
+  verdict.style.display = "block";
+  verdict.className = allPass ? "good" : "bad";
+  verdict.innerHTML = allPass
+    ? "<b>결론: 계산식이 실제 데이터에서 시황 수치와 맞습니다.</b><br>200일선과 50주선 모두 라방이 적은 범위 안에 들어옵니다."
+    : "<b>결론: 시황 수치와 어긋납니다.</b><br>이 화면을 그대로 알려주시면 계산식을 다시 보겠습니다. (거래소 차이로는 설명 안 되는 폭입니다)";
+}
+</script>
+</body>
+</html>
