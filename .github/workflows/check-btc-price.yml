@@ -23,10 +23,19 @@ jobs:
 
       - name: Fetch current BTC price from Binance (same source 가늠자 uses)
         run: |
-          curl -s "https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT" \
-            | jq '{price: (.lastPrice | tonumber), change24hPct: (.priceChangePercent | tonumber), fetchedAt: now | todate}' \
-            > data.json
-          cat data.json
+          # api.binance.com 은 GitHub Actions 러너(미국 IP)에서 지역 차단(451)에 걸리므로,
+          # 앱이 예비 경로로 쓰는 data-api.binance.vision(차단 없는 공개 시세 미러)을 먼저 쓴다.
+          for host in "https://data-api.binance.vision" "https://api.binance.com"; do
+            raw=$(curl -s "$host/api/v3/ticker/24hr?symbol=BTCUSDT")
+            if echo "$raw" | jq -e '.lastPrice' > /dev/null 2>&1; then
+              echo "$raw" | jq '{price: (.lastPrice | tonumber), change24hPct: (.priceChangePercent | tonumber), fetchedAt: now | todate}' > data.json
+              cat data.json
+              exit 0
+            fi
+            echo "실패($host): $raw" >&2
+          done
+          echo "모든 호스트에서 가격 조회 실패" >&2
+          exit 1
 
       - name: Commit result to data branch
         run: |
