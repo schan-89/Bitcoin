@@ -1,4 +1,4 @@
-import { AVG_CYCLE_DAYS, computeCyclePosition } from "./cycle";
+import { scoreTone as toScoreTone } from "./aIndicators";
 import type { RealDemandResult, SynthesisResult, ToneBucket, Zone, ZoneTone } from "../types";
 
 function normalizeZoneTone(tone: ZoneTone | null): ToneBucket {
@@ -34,10 +34,13 @@ export function synthesize(params: {
   price: number | null;
   aScoreTotal: number;
   aScoreScored: number;
+  /** 미입력을 뺀, 실제로 판정이 난 지표 수 — 긍정/경계 우세 기준이 여기에 비례한다. */
+  aScoreKnown: number;
+  cycleSummary: string;
   realDemand: RealDemandResult;
 }): SynthesisResult {
   const zoneTone = params.zone?.tone ?? null;
-  const scoreTone: ToneBucket = params.aScoreTotal >= 4 ? "긍정" : params.aScoreTotal <= -4 ? "경계" : "중립";
+  const scoreTone: ToneBucket = toScoreTone(params.aScoreTotal, params.aScoreKnown);
 
   let confidence: string;
   let mismatch = false;
@@ -61,8 +64,7 @@ export function synthesize(params: {
   }
 
   const nextCheck = determineNextCheckpoint(params.zone, params.zones, params.price);
-  const cycle = computeCyclePosition();
-  const cycleSummary = `고점+${cycle.daysSinceTop}일 (평균 ${AVG_CYCLE_DAYS}일 대비 ${(cycle.progressRatio * 100).toFixed(0)}%)`;
+  const cycleSummary = params.cycleSummary;
 
   const headline = zoneTone ? `${zoneTone} (${confidence})` : confidence;
 

@@ -50,13 +50,16 @@ import {
   latestCrossState,
 } from "./lib/indicators";
 import { getNotificationPermission, requestNotificationPermission, sendLocalNotification } from "./lib/notifications";
+import { judgeCycle } from "./lib/cycle";
 import { evaluateRealDemand } from "./lib/realDemand";
 import { synthesize } from "./lib/synthesis";
 import { computeTradeStats } from "./lib/tradeLedger";
+import { computeValuationMetrics } from "./lib/valuation";
 import { getZone, loadZones, saveZones } from "./lib/zones";
 import type {
   AlertLogEntry,
   Asset,
+  Candle,
   LadderPlan,
   DailyScoreSnapshot,
   DerivativesEntry,
@@ -117,6 +120,8 @@ export default function App() {
   const [showCrossMarkers, setShowCrossMarkers] = useState(true);
   const [weeklySeries, setWeeklySeries] = useState<IndicatorSeries | null>(null);
   const [minuteSeries, setMinuteSeries] = useState<IndicatorSeries | null>(null);
+  // A지표의 200주선·주봉 RSI·최고가 계산용. 차트 봉 단위(weeklySeries)와 무관하게 항상 받는다.
+  const [valuationWeekly, setValuationWeekly] = useState<Candle[]>([]);
   const [etfEntries, setEtfEntries] = useState<EtfFlowEntry[]>(() => loadEntries(ETF_STORAGE_KEY));
   const [derivEntries, setDerivEntries] = useState<DerivativesEntry[]>(() => loadEntries(DERIV_STORAGE_KEY));
   const [tradePlan, setTradePlan] = useState<TradePlan>(() => loadObject(TRADE_PLAN_KEY, DEFAULT_TRADE_PLAN));
@@ -154,6 +159,7 @@ export default function App() {
     // 수동 입력 자산은 부를 API가 없으므로 이전 자산의 시세가 남지 않도록 비우고 끝낸다.
     if (binanceSymbol === null && finnhubSymbol === null) {
       setSeries(null);
+      setValuationWeekly([]);
       setLivePrice(null);
       setChange24h(null);
       setError(null);
@@ -167,12 +173,15 @@ export default function App() {
       setLoading(true);
       setError(null);
       try {
-        const [candles, current] = await Promise.all([
+        const [candles, current, weekly] = await Promise.all([
           fetchDailyCandles(symbol, 1000),
           fetchCurrentPrice(symbol),
+          // 주봉이 실패해도 가격·차트는 떠야 한다 — 가치 평가 지표만 "데이터 부족"으로 남는다.
+          fetchCandles(symbol, "1w", 1000).catch(() => [] as Candle[]),
         ]);
         if (cancelled) return;
         setSeries(buildIndicatorSeries(candles));
+        setValuationWeekly(weekly);
         setLivePrice(current.price);
         setChange24h(current.change24h);
       } catch (e) {
@@ -185,6 +194,7 @@ export default function App() {
     // Finnhub 무료 티어는 현재가만 주고 과거 캔들은 유료 전용이라 series는 비워둔다.
     async function loadFinnhub(symbol: string) {
       setSeries(null);
+      setValuationWeekly([]);
       setLoading(true);
       setError(null);
       try {
@@ -277,6 +287,16 @@ export default function App() {
   const bmsbEma = series ? series.bmsbEma[series.bmsbEma.length - 1] : null;
   const currentZone = price != null ? getZone(zones, price) : undefined;
 
+  const valuation = useMemo(
+    () => computeValuationMetrics(series?.candles ?? [], valuationWeekly, price),
+    [series, valuationWeekly, price],
+  );
+  const cycleSummary = useMemo(() => {
+    const drawdownPct =
+      price != null && valuation.ath != null ? ((price - valuation.ath) / valuation.ath) * 100 : null;
+    return judgeCycle(valuation.athDate, drawdownPct).summary;
+  }, [price, valuation]);
+
   const realDemand = useMemo(() => evaluateRealDemand(etfEntries, derivEntries), [etfEntries, derivEntries]);
   const tradeStats = useMemo(() => computeTradeStats(tradePlan, tradeEntries), [tradePlan, tradeEntries]);
 
@@ -290,11 +310,12 @@ export default function App() {
         bmsbSma,
         bmsbEma,
         crossState,
+        ...valuation,
         etfEntries,
         derivEntries,
         manual: manualIndicators,
       }),
-    [price, ma50, ma200, ma50w, bmsbSma, bmsbEma, crossState, etfEntries, derivEntries, manualIndicators],
+    [price, ma50, ma200, ma50w, bmsbSma, bmsbEma, crossState, valuation, etfEntries, derivEntries, manualIndicators],
   );
   const indicatorTotals = useMemo(() => summarizeIndicators(indicatorResults), [indicatorResults]);
 
@@ -306,9 +327,11 @@ export default function App() {
         price,
         aScoreTotal: indicatorTotals.total,
         aScoreScored: indicatorTotals.scored,
+        aScoreKnown: indicatorTotals.known,
+        cycleSummary,
         realDemand,
       }),
-    [currentZone, zones, price, indicatorTotals, realDemand],
+    [currentZone, zones, price, indicatorTotals, cycleSummary, realDemand],
   );
 
   useEffect(() => {

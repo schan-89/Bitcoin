@@ -1,11 +1,19 @@
-import { AVG_CYCLE_DAYS, computeCyclePosition } from "./cycle";
-import { ETF_STREAK_TARGET, FUNDING_SPIKE_THRESHOLD_PCT, etfInflowStreak } from "./realDemand";
+import { judgeCycle } from "./cycle";
+import {
+  DERIV_STALE_DAYS,
+  ETF_STREAK_TARGET,
+  FUNDING_SPIKE_THRESHOLD_PCT,
+  daysSince,
+  etfInflowStreak,
+  etfStaleDays,
+} from "./realDemand";
 import type {
   DerivativesEntry,
   EtfFlowEntry,
   IndicatorResult,
   IndicatorScore,
   ManualIndicatorMap,
+  ToneBucket,
 } from "../types";
 
 /** Manual indicators judged directly by the user as 긍정/대기/경계 (no formula given in the design doc). */
@@ -27,6 +35,30 @@ export const REFERENCE_ONLY_INDICATOR = { id: "ewyEwj", label: "EWY/EWJ (참고�
 const MVRV_LOW = 1;
 const MVRV_HIGH = 3;
 const DXY_CHANGE_THRESHOLD_PCT = 0.2;
+// 펀딩비가 이 값 아래(음수)면 공매도 쪽이 돈을 내며 쏠려 있다는 뜻 — 과열의 반대편.
+const FUNDING_NEGATIVE_THRESHOLD_PCT = -0.01;
+
+// 가치 평가 지표 기준선 — 널리 쓰이는 관례값이며 필요시 조정 가능.
+const MA200W_NEAR_PCT = 10; // 200주선 위 이만큼 이내면 "근접"
+const MAYER_LOW = 0.8;
+const MAYER_HIGH = 2.4;
+const WEEKLY_RSI_LOW = 30;
+const WEEKLY_RSI_HIGH = 70;
+const DRAWDOWN_DEEP_PCT = -50;
+
+// 총점이 "판정된 지표 수"의 이 비율을 넘어야 긍정/경계 우세로 본다. 예전엔 ±4점 고정이라
+// 미입력이 많으면 도달할 수 없었다. 19개가 전부 판정될 때 예전 기준(4점)과 같아지는 비율.
+const SCORE_TONE_RATIO = 0.2;
+const SCORE_TONE_MIN = 2;
+
+export function scoreToneThreshold(known: number): number {
+  return Math.max(SCORE_TONE_MIN, Math.round(known * SCORE_TONE_RATIO));
+}
+
+export function scoreTone(total: number, known: number): ToneBucket {
+  const threshold = scoreToneThreshold(known);
+  return total >= threshold ? "긍정" : total <= -threshold ? "경계" : "중립";
+}
 
 export interface AIndicatorInput {
   price: number | null;
@@ -36,6 +68,12 @@ export interface AIndicatorInput {
   bmsbSma: number | null;
   bmsbEma: number | null;
   crossState: "golden" | "dead" | "unknown";
+  ma200w: number | null;
+  weeklyRsi: number | null;
+  ath: number | null;
+  athDate: string | null;
+  piShort: number | null;
+  piLongX2: number | null;
   etfEntries: EtfFlowEntry[];
   derivEntries: DerivativesEntry[];
   manual: ManualIndicatorMap;
@@ -48,7 +86,6 @@ function fmtUsd(n: number): string {
 export function computeIndicators(input: AIndicatorInput): IndicatorResult[] {
   const results: IndicatorResult[] = [];
 
-  // 불마켓밴드 (자동 근사): 200일 SMA/EMA 사이 영역. 정확한 공식은 라방 자료로 확정 필요(문서 3-3-0 참고).
   // 불마켓밴드(Bull Market Support Band) = 20주 SMA / 21주 EMA.
   // 밴드 위=상승추세 유지(긍정), 밴드 아래=추세 이탈(경계), 밴드 안=공방 중(대기).
   if (input.price != null && input.bmsbSma != null && input.bmsbEma != null) {
@@ -115,20 +152,104 @@ export function computeIndicators(input: AIndicatorInput): IndicatorResult[] {
     });
   }
 
-  // ROI 사이클
-  const cycle = computeCyclePosition();
-  const cycleScore: IndicatorScore = cycle.progressRatio >= 0.9 ? 1 : cycle.progressRatio < 0.5 ? -1 : 0;
-  results.push({
-    id: "roiCycle",
-    label: "ROI 사이클",
-    score: cycleScore,
-    detail: `고점+${cycle.daysSinceTop}일 (평균 ${AVG_CYCLE_DAYS}일 대비 ${(cycle.progressRatio * 100).toFixed(0)}%)`,
-    source: "auto",
-  });
+  // ROI 사이클 — 고점일은 실제 최고가 날짜를 쓴다.
+  const drawdownPct =
+    input.price != null && input.ath != null && input.ath > 0
+      ? ((input.price - input.ath) / input.ath) * 100
+      : null;
+  const cycle = judgeCycle(input.athDate, drawdownPct);
+  results.push({ id: "roiCycle", label: "ROI 사이클", score: cycle.score, detail: cycle.detail, source: "auto" });
+
+  // ── 가치 평가(싼가/비싼가) 지표: 위 이평선들과 달리 추세가 아니라 과열·바닥을 잰다 ──
+
+  // 200주 이평선 — 과거 약세장 바닥이 이 선 부근에서 나왔다. 고점 신호는 주지 않는다.
+  if (input.price != null && input.ma200w != null) {
+    const pct = ((input.price - input.ma200w) / input.ma200w) * 100;
+    const score: IndicatorScore = pct <= MA200W_NEAR_PCT ? 1 : 0;
+    results.push({
+      id: "ma200w",
+      label: "200주 이평선",
+      score,
+      detail: `${fmtUsd(input.ma200w)} · 현재가 대비 ${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%${pct < 0 ? " — 200주선 아래(바닥권)" : score === 1 ? " — 바닥권 근접" : ""}`,
+      source: "auto",
+    });
+  } else {
+    results.push({ id: "ma200w", label: "200주 이평선", score: null, detail: "데이터 부족", source: "auto" });
+  }
+
+  // 메이어 배수 = 현재가 ÷ 200일선.
+  if (input.price != null && input.ma200 != null && input.ma200 > 0) {
+    const mayer = input.price / input.ma200;
+    const score: IndicatorScore = mayer < MAYER_LOW ? 1 : mayer >= MAYER_HIGH ? -1 : 0;
+    results.push({
+      id: "mayer",
+      label: "메이어 배수",
+      score,
+      detail: `${mayer.toFixed(2)} (${MAYER_LOW} 미만 저평가 · ${MAYER_HIGH} 이상 과열)`,
+      source: "auto",
+    });
+  } else {
+    results.push({ id: "mayer", label: "메이어 배수", score: null, detail: "데이터 부족", source: "auto" });
+  }
+
+  // 주봉 RSI
+  if (input.weeklyRsi != null) {
+    const v = input.weeklyRsi;
+    const score: IndicatorScore = v < WEEKLY_RSI_LOW ? 1 : v >= WEEKLY_RSI_HIGH ? -1 : 0;
+    results.push({
+      id: "weeklyRsi",
+      label: "주봉 RSI(14)",
+      score,
+      detail: `${v.toFixed(1)} (${WEEKLY_RSI_LOW} 미만 과매도 · ${WEEKLY_RSI_HIGH} 이상 과매수)`,
+      source: "auto",
+    });
+  } else {
+    results.push({ id: "weeklyRsi", label: "주봉 RSI(14)", score: null, detail: "데이터 부족", source: "auto" });
+  }
+
+  // 고점 대비 낙폭 — 깊을수록 바닥권 근거. 고점 신호는 주지 않는다.
+  if (drawdownPct != null && input.ath != null) {
+    const score: IndicatorScore = drawdownPct <= DRAWDOWN_DEEP_PCT ? 1 : 0;
+    results.push({
+      id: "drawdown",
+      label: "고점 대비 낙폭",
+      score,
+      detail: `최고가 ${fmtUsd(input.ath)} 대비 ${drawdownPct.toFixed(1)}% (${DRAWDOWN_DEEP_PCT}% 이하 깊은 조정)`,
+      source: "auto",
+    });
+  } else {
+    results.push({ id: "drawdown", label: "고점 대비 낙폭", score: null, detail: "데이터 부족", source: "auto" });
+  }
+
+  // 파이 사이클 탑 — 111일선이 350일선×2를 넘으면 고점 신호. 바닥 신호는 주지 않는다.
+  if (input.piShort != null && input.piLongX2 != null && input.piLongX2 > 0) {
+    const ratio = (input.piShort / input.piLongX2) * 100;
+    const score: IndicatorScore = input.piShort >= input.piLongX2 ? -1 : 0;
+    results.push({
+      id: "piCycle",
+      label: "파이 사이클",
+      score,
+      detail:
+        score === -1
+          ? `111일선이 350일선×2 위 — 고점 신호`
+          : `111일선이 350일선×2의 ${ratio.toFixed(0)}% — 고점 신호 없음`,
+      source: "auto",
+    });
+  } else {
+    results.push({ id: "piCycle", label: "파이 사이클", score: null, detail: "데이터 부족", source: "auto" });
+  }
 
   // ETF 자금 흐름
   if (input.etfEntries.length === 0) {
     results.push({ id: "etfFlow", label: "ETF 자금 흐름", score: null, detail: "데이터 없음", source: "auto" });
+  } else if (etfStaleDays(input.etfEntries) !== null) {
+    results.push({
+      id: "etfFlow",
+      label: "ETF 자금 흐름",
+      score: null,
+      detail: `마지막 입력이 ${etfStaleDays(input.etfEntries)}일 전 — 최신 데이터 필요`,
+      source: "auto",
+    });
   } else {
     const streak = etfInflowStreak(input.etfEntries);
     const latest = [...input.etfEntries].sort((a, b) => b.date.localeCompare(a.date))[0];
@@ -142,10 +263,20 @@ export function computeIndicators(input: AIndicatorInput): IndicatorResult[] {
     .sort((a, b) => b.date.localeCompare(a.date));
   if (fundingSorted.length === 0) {
     results.push({ id: "fundingRate", label: "펀딩비", score: null, detail: "데이터 없음", source: "auto" });
+  } else if (daysSince(fundingSorted[0].date) > DERIV_STALE_DAYS) {
+    results.push({
+      id: "fundingRate",
+      label: "펀딩비",
+      score: null,
+      detail: `마지막 입력이 ${daysSince(fundingSorted[0].date)}일 전 — 최신 데이터 필요`,
+      source: "auto",
+    });
   } else {
     const latest = fundingSorted[0].fundingRatePct as number;
-    const score: IndicatorScore = latest >= FUNDING_SPIKE_THRESHOLD_PCT ? -1 : 0;
-    results.push({ id: "fundingRate", label: "펀딩비", score, detail: `최근 ${latest.toFixed(3)}%`, source: "auto" });
+    const score: IndicatorScore =
+      latest >= FUNDING_SPIKE_THRESHOLD_PCT ? -1 : latest <= FUNDING_NEGATIVE_THRESHOLD_PCT ? 1 : 0;
+    const note = score === -1 ? " — 롱 과열" : score === 1 ? " — 숏 쏠림" : "";
+    results.push({ id: "fundingRate", label: "펀딩비", score, detail: `최근 ${latest.toFixed(3)}%${note}`, source: "auto" });
   }
 
   // 수동 판단 지표 9종
@@ -196,6 +327,7 @@ export interface IndicatorTotals {
   neutral: number;
   unknown: number;
   scored: number; // total indicator count excluding reference-only ones
+  known: number; // 실제로 판정이 난(미입력·데이터 부족이 아닌) 지표 수
 }
 
 export function summarizeIndicators(results: IndicatorResult[]): IndicatorTotals {
@@ -214,5 +346,5 @@ export function summarizeIndicators(results: IndicatorResult[]): IndicatorTotals
     else if (r.score === -1) negative++;
     else neutral++;
   }
-  return { total, positive, negative, neutral, unknown, scored: results.length };
+  return { total, positive, negative, neutral, unknown, scored: results.length, known: results.length - unknown };
 }

@@ -1,7 +1,8 @@
-import type { IndicatorTotals } from "../lib/aIndicators";
+import { scoreTone, type IndicatorTotals } from "../lib/aIndicators";
 
 export function AIndicatorSummaryCard({ totals }: { totals: IndicatorTotals }) {
-  const tone = totals.total >= 4 ? "positive" : totals.total <= -4 ? "warning" : "hold";
+  const bucket = scoreTone(totals.total, totals.known);
+  const tone = bucket === "긍정" ? "positive" : bucket === "경계" ? "warning" : "hold";
   return (
     <div className={`ai-summary-card ${tone}`}>
       <h2>A지표 요약</h2>
