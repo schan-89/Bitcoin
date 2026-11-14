@@ -36,8 +36,8 @@ export function TradeLedgerPanel({ entries, onAdd, onDelete }: Props) {
       </div>
 
       <form className="entry-form" onSubmit={handleSubmit}>
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
-        <select value={side} onChange={(e) => setSide(e.target.value as "buy" | "sell")}>
+        <input type="date" aria-label="체결일" value={date} onChange={(e) => setDate(e.target.value)} required />
+        <select aria-label="매매 구분" value={side} onChange={(e) => setSide(e.target.value as "buy" | "sell")}>
           <option value="sell">매도</option>
           <option value="buy">매수</option>
         </select>
@@ -45,6 +45,8 @@ export function TradeLedgerPanel({ entries, onAdd, onDelete }: Props) {
           type="number"
           step="any"
           placeholder="수량"
+          aria-label="수량"
+          autoComplete="off"
           value={quantity}
           onChange={(e) => setQuantity(e.target.value)}
           required
@@ -53,6 +55,8 @@ export function TradeLedgerPanel({ entries, onAdd, onDelete }: Props) {
           type="number"
           step="any"
           placeholder="체결가(USD)"
+          aria-label="체결가(USD)"
+          autoComplete="off"
           value={price}
           onChange={(e) => setPrice(e.target.value)}
           required

@@ -325,7 +325,8 @@ button {
   justify-content: center;
   padding: 24px 12px;
   overflow-y: auto;
-  z-index: 20;
+  /* 층 순서: 상단 바 20 < 하단 탭바 30 < 설정 창 50. 설정 창이 탭바 밑에 깔리면 저장·취소가 가려진다. */
+  z-index: 50;
 }
 .settings-panel {
   background: var(--card-bg);
@@ -1381,4 +1382,74 @@ button:active:not(:disabled) {
 }
 .settings-actions button {
   min-height: 44px;
+}
+
+/* ───────── v4: 웹 인터페이스 지침 점검 반영 ───────── */
+
+.app-main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.app-main:focus {
+  outline: none; /* 건너뛰기 링크로 이동할 때만 잡히는 영역이라 링 대신 스크롤 위치로 충분 */
+}
+.skip-link {
+  position: absolute;
+  left: 12px;
+  top: -64px;
+  z-index: 60;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: var(--text-h);
+  color: var(--card-bg);
+  font-weight: 700;
+}
+.skip-link:focus {
+  top: 8px;
+}
+.app-header {
+  scroll-margin-top: 0;
+}
+
+/* 설정 창 안에서 스크롤이 끝나도 뒤 페이지가 같이 움직이지 않게 */
+.settings-overlay {
+  overscroll-behavior: contain;
+}
+
+/* 제목이 한 글자만 다음 줄에 남지 않게 */
+h1,
+h2,
+h3,
+.hero-title,
+.hero-verdict {
+  text-wrap: balance;
+}
+
+/* 윈도우 다크 모드 등에서 기본 입력창이 밝게 남지 않도록 색을 직접 지정 */
+input,
+select,
+textarea {
+  background-color: var(--bg);
+  color: var(--text-h);
+}
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 마우스가 있는 환경에서는 올려놓았을 때도 반응 */
+@media (hover: hover) {
+  .settings-btn:hover,
+  .range-buttons button:not(.active):hover,
+  .asset-tab:not(.active):hover,
+  .tristate-btn:hover,
+  .preset-btn:hover {
+    background-color: var(--bg);
+  }
+  .tab-btn:not(.active):hover {
+    color: var(--text-h);
+  }
+  .entry-form button:hover:not(:disabled) {
+    filter: brightness(0.95);
+  }
 }

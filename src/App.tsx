@@ -537,6 +537,9 @@ export default function App() {
 
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#main">
+        본문으로 건너뛰기
+      </a>
       <header className="app-header">
         <h1>가늠자</h1>
         {price != null ? (
@@ -566,6 +569,7 @@ export default function App() {
         onRemove={handleRemoveAsset}
       />
 
+      <main id="main" className="app-main" tabIndex={-1}>
       {activeTab === "now" && (
         <>
           {isBtc && (
@@ -591,8 +595,8 @@ export default function App() {
             />
           )}
 
-          {loading && !series && sourceKind !== "manual" && <div className="status-msg">불러오는 중…</div>}
-          {error && <div className="status-msg error">오류: {error}</div>}
+          {loading && !series && sourceKind !== "manual" && <div className="status-msg" role="status">불러오는 중…</div>}
+          {error && <div className="status-msg error" role="alert">오류: {error}</div>}
 
           {price != null && zones.length > 0 && (
             <section className="section gauge-section">
@@ -657,10 +661,10 @@ export default function App() {
                   </p>
                 )}
                 {chartInterval === "1w" && weeklySeries == null && (
-                  <p className="status-msg">주봉 데이터 불러오는 중…</p>
+                  <p className="status-msg" role="status">주봉 데이터 불러오는 중…</p>
                 )}
                 {chartInterval === "1m" && minuteSeries == null && (
-                  <p className="status-msg">분봉 데이터 불러오는 중…</p>
+                  <p className="status-msg" role="status">분봉 데이터 불러오는 중…</p>
                 )}
                 <CandleChart
                   series={series}
@@ -753,6 +757,8 @@ export default function App() {
           )}
         </>
       )}
+
+      </main>
 
       <p className="disclaimer">
         이 대시보드는 예측을 제공하지 않습니다. 미리 정한 기준선과 조건 대비 현재 상태만 계산해 보여주며,

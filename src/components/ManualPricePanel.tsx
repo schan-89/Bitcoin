@@ -34,6 +34,8 @@ export function ManualPricePanel({ asset, onSave }: Props) {
           type="number"
           step="any"
           placeholder={`현재가 (${asset.currency})`}
+          aria-label={`현재가 (${asset.currency})`}
+          autoComplete="off"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
         />

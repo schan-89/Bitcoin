@@ -65,11 +65,13 @@ export function EtfFlowPanel({ entries, onAdd, onDelete }: Props) {
       )}
 
       <form className="entry-form" onSubmit={handleSubmit}>
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+        <input type="date" aria-label="날짜" value={date} onChange={(e) => setDate(e.target.value)} required />
         <input
           type="number"
           step="any"
           placeholder="순유입 금액 (USD M, 유출은 음수)"
+          aria-label="순유입 금액 (USD M, 유출은 음수)"
+          autoComplete="off"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
           required

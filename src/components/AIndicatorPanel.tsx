@@ -42,6 +42,8 @@ function NumericIndicatorRow({
           type="number"
           step="any"
           className="indicator-numeric-input"
+          aria-label={label}
+          autoComplete="off"
           value={draft}
           placeholder="값 입력"
           onChange={(e) => setDraft(e.target.value)}

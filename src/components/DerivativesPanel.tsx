@@ -44,11 +44,13 @@ export function DerivativesPanel({ entries, onAdd, onDelete }: Props) {
       </div>
 
       <form className="entry-form deriv-form" onSubmit={handleSubmit}>
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+        <input type="date" aria-label="날짜" value={date} onChange={(e) => setDate(e.target.value)} required />
         <input
           type="number"
           step="any"
           placeholder="청산액(USD M)"
+          aria-label="청산액(USD M)"
+          autoComplete="off"
           value={liquidation}
           onChange={(e) => setLiquidation(e.target.value)}
         />
@@ -56,6 +58,8 @@ export function DerivativesPanel({ entries, onAdd, onDelete }: Props) {
           type="number"
           step="any"
           placeholder="미결제약정(USD M)"
+          aria-label="미결제약정(USD M)"
+          autoComplete="off"
           value={openInterest}
           onChange={(e) => setOpenInterest(e.target.value)}
         />
@@ -63,6 +67,8 @@ export function DerivativesPanel({ entries, onAdd, onDelete }: Props) {
           type="number"
           step="any"
           placeholder="펀딩비(%/8h)"
+          aria-label="펀딩비(%/8h)"
+          autoComplete="off"
           value={fundingRate}
           onChange={(e) => setFundingRate(e.target.value)}
         />

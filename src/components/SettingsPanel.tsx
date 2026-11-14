@@ -57,6 +57,8 @@ export function SettingsPanel({ zones, onSave, onClose, finnhubApiKey, onSaveFin
             onChange={(e) => setKeyDraft(e.target.value)}
             placeholder="Finnhub API 키"
             aria-label="Finnhub API 키"
+            autoComplete="off"
+            spellCheck={false}
           />
           <button type="button" className="primary" onClick={() => onSaveFinnhubApiKey(keyDraft)}>
             키 저장
