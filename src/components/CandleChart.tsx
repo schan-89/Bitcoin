@@ -174,7 +174,8 @@ export function CandleChart({
 
     const candleSeries = add(
       chart.addSeries(CandlestickSeries, {
-        upColor: COLORS.up,
+        // 상승 봉은 속을 비우고 하락 봉은 채운다 — 빨강/초록을 구분하기 어려운 사람도 모양으로 읽는다.
+        upColor: "rgba(0, 0, 0, 0)",
         downColor: COLORS.down,
         borderUpColor: COLORS.up,
         borderDownColor: COLORS.down,

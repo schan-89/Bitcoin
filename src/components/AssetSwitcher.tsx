@@ -36,6 +36,7 @@ export function AssetSwitcher({ assets, activeId, onSelect, onAddPreset, onAddCu
             key={a.id}
             type="button"
             className={`asset-tab ${a.id === activeId ? "active" : ""}`}
+            aria-pressed={a.id === activeId}
             onClick={() => onSelect(a.id)}
           >
             {a.name}

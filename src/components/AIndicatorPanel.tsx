@@ -145,6 +145,7 @@ export function AIndicatorPanel({ results, manual, onSetTriState, onSetNumeric, 
                           key={opt.score}
                           type="button"
                           className={`tristate-btn ${opt.cls} ${current === opt.score ? "active" : ""}`}
+                          aria-pressed={current === opt.score}
                           onClick={() => onSetTriState(r.id, opt.score)}
                         >
                           {opt.label}

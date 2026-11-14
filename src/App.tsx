@@ -623,6 +623,7 @@ export default function App() {
                         key={opt.value}
                         type="button"
                         className={chartInterval === opt.value ? "active" : ""}
+                        aria-pressed={chartInterval === opt.value}
                         onClick={() => setChartInterval(opt.value)}
                       >
                         {opt.label}
@@ -631,18 +632,19 @@ export default function App() {
                   </div>
                 </div>
                 <div className="range-buttons overlay-toggles">
-                  <button type="button" className={showMa ? "active" : ""} onClick={() => setShowMa((v) => !v)}>
+                  <button type="button" className={showMa ? "active" : ""} aria-pressed={showMa} onClick={() => setShowMa((v) => !v)}>
                     이평선
                   </button>
-                  <button type="button" className={showBmsb ? "active" : ""} onClick={() => setShowBmsb((v) => !v)}>
+                  <button type="button" className={showBmsb ? "active" : ""} aria-pressed={showBmsb} onClick={() => setShowBmsb((v) => !v)}>
                     불마켓밴드
                   </button>
-                  <button type="button" className={showRsi ? "active" : ""} onClick={() => setShowRsi((v) => !v)}>
+                  <button type="button" className={showRsi ? "active" : ""} aria-pressed={showRsi} onClick={() => setShowRsi((v) => !v)}>
                     RSI
                   </button>
                   <button
                     type="button"
                     className={showCrossMarkers ? "active" : ""}
+                    aria-pressed={showCrossMarkers}
                     onClick={() => setShowCrossMarkers((v) => !v)}
                   >
                     크로스마커

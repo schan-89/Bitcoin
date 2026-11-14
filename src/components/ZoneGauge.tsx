@@ -9,6 +9,15 @@ const TONE_COLOR: Record<string, string> = {
   과열주의: "#c0782b",
 };
 
+// 톤 이름 칩: 글자-배경 대비가 모두 4.5:1 이상이 되도록 막대 색과 별도로 정한 값.
+const TONE_PILL: Record<string, { bg: string; fg: string }> = {
+  위험: { bg: "#b03225", fg: "#ffffff" },
+  경계: { bg: "#e0a800", fg: "#1a1200" },
+  관망: { bg: "#5f6d79", fg: "#ffffff" },
+  긍정: { bg: "#23714a", fg: "#ffffff" },
+  과열주의: { bg: "#a35a12", fg: "#ffffff" },
+};
+
 // 경계 눈금 라벨이 이 간격(%)보다 가까우면 뒤쪽 것을 생략해 겹침을 막는다.
 const MIN_TICK_GAP_PCT = 12;
 
@@ -100,7 +109,13 @@ export function ZoneGauge({ zones, price, currency = "$" }: Props) {
         {currentZone ? (
           <>
             <strong>{currentZone.label}</strong>
-            <span className="gauge-tone" style={{ background: TONE_COLOR[currentZone.tone] }}>
+            <span
+              className="gauge-tone"
+              style={{
+                background: TONE_PILL[currentZone.tone]?.bg ?? "#5f6d79",
+                color: TONE_PILL[currentZone.tone]?.fg ?? "#ffffff",
+              }}
+            >
               {currentZone.tone}
             </span>
           </>
