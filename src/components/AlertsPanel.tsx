@@ -13,6 +13,12 @@ interface Props {
 }
 
 export function AlertsPanel({ permission, onRequestPermission, nearby, alertLog }: Props) {
+  // 한 구간의 위쪽 경계와 다음 구간의 아래쪽 경계는 같은 가격이라 두 줄로 나오면 중복처럼 보인다.
+  const mergedNearby = [...new Set(nearby.map((b) => b.boundaryPrice))].map((boundaryPrice) => {
+    const same = nearby.filter((b) => b.boundaryPrice === boundaryPrice);
+    return { boundaryPrice, distancePct: same[0].distancePct, labels: same.map((b) => b.zoneLabel) };
+  });
+
   return (
     <div className="entry-panel">
       <div className="entry-panel-header">
@@ -22,7 +28,7 @@ export function AlertsPanel({ permission, onRequestPermission, nearby, alertLog 
         ) : permission === "granted" ? (
           <span className="streak-badge">알림 켜짐</span>
         ) : permission === "denied" ? (
-          <span className="streak-badge">알림 차단됨 (브라우저 설정에서 허용 필요)</span>
+          <span className="streak-badge">알림 차단됨 · 브라우저 설정에서 허용</span>
         ) : (
           <button type="button" className="link-btn" onClick={onRequestPermission}>
             브라우저 알림 켜기
@@ -30,15 +36,15 @@ export function AlertsPanel({ permission, onRequestPermission, nearby, alertLog 
         )}
       </div>
       <p className="section-sub">
-        가격이 기준선(구간 경계) ±{PROXIMITY_THRESHOLD_PCT}% 이내로 접근하면 알림을 보냅니다. 앱이 열려있는 동안,
-        가격을 갱신할 때(5분마다)마다 확인합니다.
+        기준선 ±{PROXIMITY_THRESHOLD_PCT}% 이내로 다가오면 알림을 보냅니다. 앱을 열어 둔 동안 5분마다 확인합니다.
       </p>
 
-      {nearby.length > 0 ? (
+      {mergedNearby.length > 0 ? (
         <ul className="nearby-list">
-          {nearby.map((b) => (
-            <li key={b.key}>
-              <strong>{fmtUsd(b.boundaryPrice)}</strong> ({b.zoneLabel} 경계) — 거리 {b.distancePct.toFixed(2)}%
+          {mergedNearby.map((b) => (
+            <li key={b.boundaryPrice}>
+              <strong>{fmtUsd(b.boundaryPrice)}</strong> · 현재가에서 {b.distancePct.toFixed(2)}% 거리
+              <span className="nearby-labels">{b.labels.join(" · ")} 경계</span>
             </li>
           ))}
         </ul>
@@ -47,8 +53,8 @@ export function AlertsPanel({ permission, onRequestPermission, nearby, alertLog 
       )}
 
       {alertLog.length > 0 && (
-        <>
-          <h3 className="alert-log-title">알림 기록</h3>
+        <details className="fold">
+          <summary>알림 기록 {alertLog.length}건</summary>
           <table className="entry-table">
             <thead>
               <tr>
@@ -72,7 +78,7 @@ export function AlertsPanel({ permission, onRequestPermission, nearby, alertLog 
                 ))}
             </tbody>
           </table>
-        </>
+        </details>
       )}
     </div>
   );

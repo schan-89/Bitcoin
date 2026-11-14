@@ -29,6 +29,22 @@ export const MANUAL_TRISTATE_INDICATORS: { id: string; label: string; hint: stri
   { id: "mstrNav", label: "MSTR NAV 할인율", hint: "할인 축소·프리미엄 전환 시 긍정" },
 ];
 
+/** 지표 표를 읽기 쉽게 묶는 그룹. 목록에 없는 지표는 마지막 "기타" 그룹으로 간다. */
+export const INDICATOR_GROUPS: { title: string; note: string; ids: string[] }[] = [
+  { title: "추세", note: "이동평균 위/아래", ids: ["bullBand", "ma50w", "ma200", "ma50", "cross"] },
+  {
+    title: "가치 평가",
+    note: "싼가 / 비싼가",
+    ids: ["ma200w", "mayer", "weeklyRsi", "drawdown", "piCycle", "roiCycle"],
+  },
+  { title: "수급·파생", note: "직접 입력한 ETF·펀딩비", ids: ["etfFlow", "fundingRate"] },
+  {
+    title: "직접 판단",
+    note: "긍정/대기/경계를 직접 선택",
+    ids: [...MANUAL_TRISTATE_INDICATORS.map((d) => d.id), "mvrv", "dxy"],
+  },
+];
+
 // EWY/EWJ는 설계 문서에서 "직접 신호화하지 않고 맥락 정보로만 사용"하도록 명시되어 있어 점수 집계에서 제외합니다.
 export const REFERENCE_ONLY_INDICATOR = { id: "ewyEwj", label: "EWY/EWJ (참고용, 점수 미반영)" };
 

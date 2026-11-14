@@ -41,7 +41,7 @@ export function IndicatorRadarChart({ results }: { results: IndicatorResult[] })
               min: -1,
               max: 1,
               ticks: { stepSize: 1, showLabelBackdrop: false },
-              pointLabels: { font: { size: 10 } },
+              pointLabels: { display: false },
             },
           },
           plugins: {

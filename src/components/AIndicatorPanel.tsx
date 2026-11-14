@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MANUAL_TRISTATE_INDICATORS, REFERENCE_ONLY_INDICATOR } from "../lib/aIndicators";
+import { INDICATOR_GROUPS, MANUAL_TRISTATE_INDICATORS, REFERENCE_ONLY_INDICATOR } from "../lib/aIndicators";
 import type { IndicatorResult, IndicatorScore, ManualIndicatorMap } from "../types";
 
 const TRISTATE_OPTIONS: { score: IndicatorScore; label: string; cls: string }[] = [
@@ -9,7 +9,7 @@ const TRISTATE_OPTIONS: { score: IndicatorScore; label: string; cls: string }[] 
 ];
 
 function scoreBadge(score: IndicatorScore | null): { text: string; cls: string } {
-  if (score === null) return { text: "❓", cls: "neutral" };
+  if (score === null) return { text: "미입력", cls: "unknown" };
   if (score === 1) return { text: "긍정", cls: "up" };
   if (score === -1) return { text: "경계", cls: "down" };
   return { text: "대기", cls: "neutral" };
@@ -35,11 +35,9 @@ function NumericIndicatorRow({
 
   return (
     <tr>
-      <td>
-        {label}
+      <td colSpan={2} className="manual-cell">
+        <div className="indicator-name">{label}</div>
         <div className="indicator-hint">{hint}</div>
-      </td>
-      <td colSpan={2}>
         <input
           type="number"
           step="any"
@@ -92,24 +90,25 @@ interface Props {
 export function AIndicatorPanel({ results, manual, onSetTriState, onSetNumeric, ewyNote, onSetEwyNote }: Props) {
   const manualTriIds = new Set(MANUAL_TRISTATE_INDICATORS.map((d) => d.id));
 
-  return (
-    <div className="entry-panel">
-      <div className="entry-panel-header">
-        <h2>A지표 ({results.length}개)</h2>
-      </div>
-      <p className="section-sub">
-        자동 계산 지표는 위 데이터에서 그대로 가져오고, 수동 판단 지표는 직접 긍정/대기/경계를 선택하세요.
-      </p>
-      <table className="entry-table indicator-table">
-        <thead>
-          <tr>
-            <th>지표</th>
-            <th>판정</th>
-            <th>상세</th>
-          </tr>
-        </thead>
-        <tbody>
-          {results.map((r) => {
+  const byId = new Map(results.map((r) => [r.id, r]));
+  const grouped = new Set(INDICATOR_GROUPS.flatMap((g) => g.ids));
+  const leftovers = results.filter((r) => !grouped.has(r.id));
+  const groups = [
+    ...INDICATOR_GROUPS,
+    ...(leftovers.length > 0 ? [{ title: "기타", note: "", ids: leftovers.map((r) => r.id) }] : []),
+  ]
+    .map((g) => {
+      const rows = g.ids.map((id) => byId.get(id)).filter((r): r is IndicatorResult => r !== undefined);
+      return {
+        ...g,
+        rows,
+        positive: rows.filter((r) => r.score === 1).length,
+        negative: rows.filter((r) => r.score === -1).length,
+      };
+    })
+    .filter((g) => g.rows.length > 0);
+
+  function renderRow(r: IndicatorResult) {
             if (r.id === "mvrv") {
               return (
                 <NumericIndicatorRow
@@ -137,11 +136,9 @@ export function AIndicatorPanel({ results, manual, onSetTriState, onSetNumeric, 
               const current = manual[r.id]?.score;
               return (
                 <tr key={r.id}>
-                  <td>
-                    {r.label}
+                  <td colSpan={2} className="manual-cell">
+                    <div className="indicator-name">{r.label}</div>
                     <div className="indicator-hint">{hint}</div>
-                  </td>
-                  <td colSpan={2}>
                     <div className="tristate-buttons">
                       {TRISTATE_OPTIONS.map((opt) => (
                         <button
@@ -167,17 +164,45 @@ export function AIndicatorPanel({ results, manual, onSetTriState, onSetNumeric, 
             const badge = scoreBadge(r.score);
             return (
               <tr key={r.id}>
-                <td>
-                  {r.label} <span className="source-tag">자동</span>
+                <td className="auto-cell">
+                  <div className="indicator-name">{r.label}</div>
+                  <div className="indicator-detail">{r.detail}</div>
                 </td>
-                <td>
+                <td className="badge-cell">
                   <span className={`indicator-badge ${badge.cls}`}>{badge.text}</span>
                 </td>
-                <td className="check-detail">{r.detail}</td>
               </tr>
             );
-          })}
-        </tbody>
+  }
+
+  return (
+    <div className="entry-panel">
+      <div className="entry-panel-header">
+        <h2>A지표 ({results.length}개)</h2>
+      </div>
+      <p className="section-sub">
+        자동 지표는 가격 데이터에서 계산하고, "직접 판단" 항목은 긍정·대기·경계를 직접 고르세요.
+      </p>
+      <table className="entry-table indicator-table">
+        <colgroup>
+          <col />
+          <col className="col-badge" />
+        </colgroup>
+        {groups.map((g) => (
+          <tbody key={g.title}>
+            <tr className="group-row">
+              <th colSpan={2}>
+                <span className="group-title">{g.title}</span>
+                <span className="group-note">{g.note}</span>
+                <span className="group-count">
+                  <span className="up">긍정 {g.positive}</span>
+                  <span className="down">경계 {g.negative}</span>
+                </span>
+              </th>
+            </tr>
+            {g.rows.map((r) => renderRow(r))}
+          </tbody>
+        ))}
       </table>
 
       <div className="ewy-note">

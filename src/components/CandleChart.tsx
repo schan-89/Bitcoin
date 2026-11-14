@@ -109,6 +109,11 @@ export function CandleChart({
         vertLines: { color: isDark ? "#23252e" : "#eeeef0" },
         horzLines: { color: isDark ? "#23252e" : "#eeeef0" },
       },
+      // 축 라벨이 "140000.00"처럼 길어 서로 겹치므로 1.4만 달러 단위로 줄여 쓴다.
+      localization: {
+        priceFormatter: (p: number) =>
+          Math.abs(p) >= 1000 ? `${(p / 1000).toFixed(p % 1000 === 0 ? 0 : 1)}K` : p.toFixed(p < 10 ? 2 : 0),
+      },
       crosshair: { mode: CrosshairMode.Normal },
       rightPriceScale: { borderColor: isDark ? "#2e303a" : "#e5e4e7" },
       timeScale: { borderColor: isDark ? "#2e303a" : "#e5e4e7", timeVisible: true },
